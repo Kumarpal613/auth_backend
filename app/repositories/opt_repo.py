@@ -3,12 +3,12 @@ from hmac import new
 
 from pydantic import EmailStr
 from app.core.config import Settings
-from app.models.otps import Otps, PasswordRecovery
+from app.models.otps import Otps, OtpTracker
 
 
-def db_record_otp( db, user_id: int, otp: str):
+def db_record_otp( db, tracker_id: int, otp: str):
     
-    new_otp = Otps(user_id=user_id, otp=otp, expires_at= datetime.now(timezone.utc) +timedelta(minutes=Settings.otp_expire_minutes))
+    new_otp = Otps(tracker_id=tracker_id, otp=otp, expires_at= datetime.now(timezone.utc) +timedelta(minutes=Settings.otp_expire_minutes))
 
     db.add(new_otp)
     db.commit()
@@ -40,38 +40,7 @@ def db_invalidate_otp(user_id: int, db):
     db.delete(old_opt)
     db.commit()
 
-def db_record_password_recovery(db,user_id: int):
-    
-    new_recovery = PasswordRecovery(user_id=user_id)
-    db.add(new_recovery)
+def db_record_otp_tracker(db,user_id: int, is_temp: bool):
+    new_tracker = OtpTracker(user_id=user_id, is_temp=is_temp)
+    db.add(new_tracker)
     db.commit()
-
-def db_get_password_recovery(db,user_id:int):
-    recovery = db.query(PasswordRecovery).filter(
-        PasswordRecovery.user_id == user_id
-    ).first()
-
-    return recovery
-
-def db_update_password_recovery(db, user_id:int, add_resend_counts:int,add_try_counts:int,last_seen_at: datetime = datetime.now(timezone.utc)):
-    recovery = db.query(PasswordRecovery).filter(
-        PasswordRecovery.user_id == user_id
-    ).update(
-        {   
-            PasswordRecovery.resend_count: PasswordRecovery.resend_count + add_resend_counts,
-            PasswordRecovery.count_try: PasswordRecovery.count_try + add_try_counts,
-            PasswordRecovery.last_seen_at: last_seen_at
-        }
-    )
-    db.commit()
-
-def db_delete_password_recovery(db,user_id:int):
-
-    recovery = db.query(PasswordRecovery).filter(
-        PasswordRecovery.user_id == user_id
-    ).first()
-
-    if recovery:
-        db.delete(recovery)
-        db.commit()
-      

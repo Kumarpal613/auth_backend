@@ -40,6 +40,10 @@ def refresh_token_service(db, old_refresh: str):
 
     # rotation
     revoke_token(db, db_token)
+    
+    user = get_user_by_id(db, db_token.user_id)
+    if user.token_version != db_token.token_version:
+        raise HTTPException(401, "Token version mismatch")
 
     return create_refresh_and_access_tokens(db, db_token.user_id)
 
@@ -59,6 +63,7 @@ def create_refresh_and_access_tokens(db, user_id: int):
         db=db,
         user_id=user.id,
         token_hash=hash_refresh_token(new_refresh),
+        token_version=user.token_version,
         expires_at=datetime.now(timezone.utc)
         + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
     ) 

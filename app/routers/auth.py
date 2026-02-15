@@ -66,7 +66,11 @@ def signup(response: Response, db: db_dep, user_data: auth.SignupReq ):
 
     return {"message":"User created Successfully"}
 
-@router.get("/refresh")
+@router.post("/signup/verify-otp")
+def verify_signup_otp(request: Request, db: db_dep, otp: str):
+    pass
+
+@router.post("/refresh")
 def refresh(request: Request, response: Response, db:db_dep):
 
     old_refresh = request.cookies.get("refresh_token")
@@ -94,9 +98,7 @@ def logout(request: Request, response: Response, db: db_dep):
 
     if refresh_token:
         token_hash = hash_refresh_token(refresh_token)
-
         query_refresh_token(db, token_hash).update({"revoked": True})
-
         db.commit()
         
     response.delete_cookie(
@@ -138,18 +140,6 @@ def logout_all(request: Request, response: Response, db: db_dep):
 
     return {"message": "Logged out from all devices"}
 
-
-
-        
-
-    response.delete_cookie(
-        key="refresh_token",
-        httponly=True,
-        samesite="lax",
-        secure=settings.COOKIE_SECURE,
-    )
-
-    return {"message": "Successfully Logged out"}
 
 @router.post("/password-recovery/request")
 def recover_password(email: str, db: db_dep):
