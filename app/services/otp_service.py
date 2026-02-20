@@ -126,7 +126,6 @@ def send_signup_otp(db, temp_user: TempUser):
     validate_blocked_tracker(db,tracker)
     check_otp_generation_permission(db, tracker)
     otp = request_otp(db, tracker)
-    print("this is the otp: ",otp)
     email.send_signup_otp(temp_user.email, otp)
     jwt_token = create_signup_token(str(tracker.uuid),temp_user.email)
 
@@ -151,7 +150,6 @@ def resend_signup_otp(db, token ):
     temp_user = user_repo.get_temp_user_by_email(db,payload["email"])
     if temp_user is None :
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail={"message":"User Not Found"})
-    print("this is the otp: ",otp)
     email.send_signup_otp(temp_user.email, otp)
     jwt_token = create_signup_token(str(tracker.uuid),temp_user.email)
 
@@ -184,10 +182,6 @@ def verify_signup_otp(db,token, otp):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail={"message":"Wrong OTP"})
 
     return payload["email"] 
-
-
-
-
 
 if __name__ == "__main__":
 

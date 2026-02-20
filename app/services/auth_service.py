@@ -1,16 +1,10 @@
 from datetime import datetime, timedelta, timezone
 
-from httpx import get
+from sqlalchemy.orm import Session
 from app.models.otps import OtpTracker
 from app.models.user import TempUser, User
 from app.repositories import otp_repo
-from app.repositories.user_repo import (
-    create_temp_user,
-    get_user_by_email,
-    get_user_by_id,
-)
 from app.repositories import user_repo
-from app.core import security
 from app.core import security
 from app.repositories import refresh_repo
 
@@ -19,35 +13,9 @@ from app.core.config import settings
 from app.utils import email
 from app.schemas import auth
 
-
-def refresh_token_service(db, old_refresh: str):
-
-    hashed = security.hash_refresh_token(old_refresh)
-
-    db_token = refresh_repo.query_refresh_token(db, hashed).first()
-
-    if not db_token:
-        raise HTTPException(401, "Invalid refresh token")
-
-    if db_token.expires_at < datetime.now(timezone.utc):
-        raise HTTPException(401, "Refresh expired")
-
-    if db_token.revoked:
-        raise HTTPException(401, "Refresh token revoked")
-
-    # rotation
-    refresh_repo.revoke_token(db, db_token)
-
-    user = get_user_by_id(db, db_token.user_id)
-    if user.token_version != db_token.token_version:
-        raise HTTPException(401, "Token version mismatch")
-
-    return create_refresh_and_access_tokens(db, db_token.user_id)
-
 def create_refresh_and_access_tokens(db, user_id: int):
 
-    user = get_user_by_id(db, user_id)
-
+    user = user_repo.get_user_by_id(db, user_id)
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
@@ -66,6 +34,29 @@ def create_refresh_and_access_tokens(db, user_id: int):
 
     return access_token, new_refresh
 
+def verify_refresh_token_and_revoke(db:Session,refresh_token)->User:
+    token_hash = security.hash_refresh_token(refresh_token)
+
+    refresh_token = refresh_repo.get_refresh_token(db, token_hash)
+    
+    if refresh_token is None :
+        raise HTTPException(401, "Invalid refresh token")
+
+    if refresh_token.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(401, "Refresh expired")
+
+    if refresh_token.revoked:
+        raise HTTPException(401, "Refresh token revoked")
+
+    user = user_repo.get_user_by_id(db, refresh_token.user_id)
+    if not user or user.token_version != refresh_token.token_version:
+        raise HTTPException(401, "Invalid or expired session. Please log in again.")
+    
+    refresh_token.revoked = True
+    db.flush()
+
+    return user
+
 def create_temp_user(db, user_data: auth.SignupReq):
     user_data.password = security.hash_password(user_data.password)
     temp_user = user_repo.create_temp_user(db, user_data)
@@ -78,4 +69,4 @@ def register_permanent_user(db, temp_user_email: str)->User :
     if  user is None :
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail={"message":"Creation of User Account, failed"})
     return user 
-    
+ 

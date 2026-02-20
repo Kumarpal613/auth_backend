@@ -34,8 +34,8 @@ def send_signup_otp(to_email: str, otp: str):
     subject = "Your OTP for Signup"
     body = f"Your OTP for signup is: {otp}. It will expire in {settings.OTP_EXPIRE_MINUTES} minutes."
     try:
-        # send_email(to_email, subject, body)
-        t = 0/0  
+        send_email(to_email, subject, body)
     except Exception:
         print("⚠️ Skipping email sending (Offline or Error)")
+        print("requested otp: ",otp)
     

@@ -9,10 +9,11 @@ from fastapi.security import OAuth2PasswordRequestForm, HTTPBearer, HTTPAuthoriz
 from app.db.session import get_db
 from app.core import security
 from app.core.config import settings
+from app.models.tokens import RefreshToken
 from app.schemas import auth
 from app.services import auth_service
 from app.services import otp_service
-from app.repositories import  user_repo,otp_repo
+from app.repositories import  refresh_repo, user_repo,otp_repo
 
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -29,10 +30,11 @@ def signup(response: Response, db: db_dep, user_data: auth.SignupReq ):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail= "Email already registered")
     
     temp_user = user_repo.get_temp_user_by_email(db, user_data.email)
+    user_data.password = security.hash_password(user_data.password)
     if temp_user is None:
         temp_user = user_repo.create_temp_user(db, user_data)
     else:
-        temp_user.password = security.hash_password(user_data.password)
+        temp_user.password = user_data.password
         db.flush()
     
     jwt_token = otp_service.send_signup_otp(db, temp_user)["signup_token"]
@@ -81,10 +83,12 @@ def login( response: Response, db: db_dep , form_data:form_dep ):
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    if not user or not security.verify_password(form_data.password, user.password):
+    if not user or not security.verify_password(password=form_data.password,hashed= user.password):
         raise auth_exception
 
     access_token, refresh_token = auth_service.create_refresh_and_access_tokens(db, user.id)
+
+    
 
     response.set_cookie(
         key="refresh_token",
@@ -94,79 +98,75 @@ def login( response: Response, db: db_dep , form_data:form_dep ):
         samesite="lax",
         max_age = settings.REFRESH_TOKEN_EXPIRE_DAYS*24*60*60
     )
-
+    db.commit()
     return {"access_token": access_token}
 
-# @router.post("/refresh")
-# def refresh(request: Request, response: Response, db:db_dep):
+@router.post("/refresh")
+def refresh(request: Request, response: Response, db:db_dep):
 
-#     old_refresh = request.cookies.get("refresh_token")
+    old_refresh = request.cookies.get("refresh_token")
 
-#     if not old_refresh:
-#         raise HTTPException(401, "No refresh token provided")
+    if not old_refresh:
+        raise HTTPException(401, "No refresh token provided")
     
-#     access_token, new_refresh = refresh_token_service(db, old_refresh)
+    user = auth_service.verify_refresh_token_and_revoke(db,old_refresh)
+    if user is None :
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail={"message":"User  not found"})
+    
+    access_token, new_refresh = auth_service.create_refresh_and_access_tokens(db,user.id)
 
-#     response.set_cookie(
-#         key="refresh_token",
-#         value=new_refresh,
-#         httponly=True,
-#         secure=settings.COOKIE_SECURE,
-#         samesite="lax",
-#         max_age = settings.REFRESH_TOKEN_EXPIRE_DAYS*24*60*60   
-#     )
+    response.set_cookie(
+        key="refresh_token",
+        value=new_refresh,
+        httponly=True,
+        secure=settings.COOKIE_SECURE,
+        samesite="lax",
+        max_age = settings.REFRESH_TOKEN_EXPIRE_DAYS*24*60*60   
+    )
+    db.commit()
+    return {"access_token": access_token}
 
-#     return {"access_token": access_token}
+@router.post("/logout")
+def logout(request: Request, response: Response, db: db_dep):
 
-# @router.post("/logout")
-# def logout(request: Request, response: Response, db: db_dep):
+    refresh_token = request.cookies.get("refresh_token")
 
-#     refresh_token = request.cookies.get("refresh_token")
+    if refresh_token:
+        user = auth_service.verify_refresh_token_and_revoke(db,refresh_token)
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail={"message":" Refresh Token Required"}) 
+          
+    response.delete_cookie(
+        key="refresh_token",
+        httponly=True,
+        samesite="lax",
+        secure=settings.COOKIE_SECURE,
+    )
+    db.commit()
+    return {"message": "Successfully Logged out"}
 
-#     if refresh_token:
-#         token_hash = hash_refresh_token(refresh_token)
-#         query_refresh_token(db, token_hash).update({"revoked": True})
-#         db.commit()
-        
-#     response.delete_cookie(
-#         key="refresh_token",
-#         httponly=True,
-#         samesite="lax",
-#         secure=settings.COOKIE_SECURE,
-#     )
+@router.post("/logout_all")
+def logout_all(request: Request, response: Response, db: db_dep):
 
-#     return {"message": "Successfully Logged out"}
+    refresh_token = request.cookies.get("refresh_token")
 
-# @router.post("/logout_all")
-# def logout_all(request: Request, response: Response, db: db_dep):
-#     refresh_token = request.cookies.get("refresh_token")
-
-#     if refresh_token:
-#         token_hash = hash_refresh_token(refresh_token)
-#         current_user = query_refresh_token(db, token_hash).first()
-#         if current_user :
-
-#             db.query(RefreshToken).filter(
-#                 RefreshToken.user_id == current_user.user_id,
-#                 RefreshToken.revoked == False
-#             ).update({"revoked": True})
-
-#             db.commit()
-
-#             user = get_user_by_id(db,current_user.user_id)
-#             if user:
-#                 user.token_version += 1
-#                 db.commit()
-
-#     response.delete_cookie(
-#         key="refresh_token",
-#         httponly=True,
-#         samesite="lax",
-#         secure=settings.COOKIE_SECURE,
-#     )
-
-#     return {"message": "Logged out from all devices"}
-
+    if refresh_token:
+        user = auth_service.verify_refresh_token_and_revoke(db,refresh_token)
+        if user:
+            user.token_version += 1
+            db.flush()
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail={"message":" Refresh Token Required"}) 
+    
+    
+    response.delete_cookie(
+        key="refresh_token",
+        httponly=True,
+        samesite="lax",
+        secure=settings.COOKIE_SECURE,
+    )
+    db.commit()
+    return {"message": "Logged out from all devices"}
 
 # @router.post("/password-recovery/request")
 # def recover_password(email: str, db: db_dep):
