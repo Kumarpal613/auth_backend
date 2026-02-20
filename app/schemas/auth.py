@@ -12,3 +12,5 @@ class ResetPasswordReq(BaseModel):
     token: str
     new_password: str
 
+class VerifyOTPRequest(BaseModel):
+    otp: str

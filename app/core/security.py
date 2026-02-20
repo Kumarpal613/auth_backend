@@ -18,6 +18,27 @@ def hash_password(password: str)->str:
 def verify_password(password: str, hashed: str)->bool :
     return password_hash.verify(password, hashed)
 
+def create_jwt_token(payload,jwt_secret=settings.JWT_SECRET,algorithm=settings.JWT_ALGORITHM):
+    return jwt.encode(payload, jwt_secret, algorithm=algorithm)
+
+def verify_jwt_token(token, jwt_secret=settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM):
+    try :
+        payload =jwt.decode(token,jwt_secret,algorithms=[algorithm])
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={f"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
 def create_access_token(user_id: int, token_version: int, role: str = "User"):
 
     now = datetime.now(timezone.utc)
@@ -55,6 +76,7 @@ def decode_access_token(token: str):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+
 def genenate_temp_password_token():
     return secrets.token_urlsafe(32)
 
@@ -72,3 +94,4 @@ def hash_otp(otp: str):
 
 def verify_otp(otp: str, otp_hash: str) -> bool:
     return hash_otp(otp) == otp_hash
+

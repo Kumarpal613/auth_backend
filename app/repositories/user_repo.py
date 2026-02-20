@@ -2,30 +2,36 @@ from app.core.security import hash_password
 from app.models.user import TempUser, User
 
 
-def db_get_user_by_email(db, email: str):
+def get_user_by_email(db, email: str,temp:bool = False):
+    if temp:
+        return db.query(TempUser).filter(TempUser.email == email).first()
     return db.query(User).filter(User.email == email).first()
 
 def get_user_by_id(db, user_id: int):
     return db.query(User).filter(User.id == user_id).first()
 
-def db_create_user(db, user_data):
-    user_data.password = hash_password(user_data.password)
-    new_user = User(email=user_data.email, password_hash=user_data.password)  
+def create_user(db, user_data:TempUser):
+    new_user = User(email=user_data.email, password=user_data.password)  
     db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    db.flush()
     return new_user
 
-def db_record_temp_password_token(db, email: str, token: str):
+def record_temp_password_token(db, email: str, token: str):
     pass
 
-def db_verify_temp_password_token(db, email: str, token: str) -> bool:  # type: ignore
+def verify_temp_password_token(db, email: str, token: str) -> bool:  # type: ignore
     pass
 
-def db_create_temp_user(db, email: str, password: str):
-    password_hash = hash_password(password)
-    temp_user = TempUser(email=email, password_hash=password_hash)
+def create_temp_user(db,user_data):
+    temp_user = TempUser(**user_data.model_dump())
     db.add(temp_user)
-    db.commit()
-    db.refresh(temp_user)
+    db.flush()
     return temp_user
+
+def get_temp_user_by_email(db, email: str):
+    return db.query(TempUser).filter(TempUser.email == email).first()
+
+def delete_temp_user_by_email(db,email:str):
+    db.query(TempUser).filter(TempUser.email == email).delete()
+    db.flush()
+    return True
