@@ -1,3 +1,4 @@
+from asyncio.windows_events import NULL
 from mailbox import Message
 import stat
 from typing import Annotated
@@ -210,6 +211,9 @@ def reset_password(request: auth.ResetPasswordReq, db: db_dep):
         raise HTTPException(status_code=403, detail="Invalid token type or expired")
     
     user_email = payload.get("email")
+    if not user_email:
+        raise HTTPException(status_code=403,detail="Invalid token ")
+    
     user = user_repo.get_user_by_email(db, user_email)
     
     if not user:
