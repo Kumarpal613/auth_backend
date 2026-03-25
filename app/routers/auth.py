@@ -168,31 +168,61 @@ def logout_all(request: Request, response: Response, db: db_dep):
     db.commit()
     return {"message": "Logged out from all devices"}
 
-# @router.post("/password-recovery/request")
-# def recover_password(email: str, db: db_dep):
-#     user = get_user_by_email(db, email)
+@router.post("/password-recovery/request")
+def request_password_recovery(request: auth.ForgotPasswordReq, db: db_dep):
+    user = user_repo.get_user_by_email(db, request.email)
 
-#     if not user:
-#         # Always return the same response to prevent email enumeration attacks
-#         raise HTTPException(status_code=status.HTTP_200_OK, detail="If an account with that email exists, a password recovery email has been sent.")
+    if not user:
+        # Always return the same response to prevent email enumeration attacks
+        return {"message": "If an account with that email exists, a password recovery email has been sent."}
 
-#      # Only send email if user actually exists
-#     create_password_recovery = handle_password_recovery(db,user.id)
-#     deliver_otp_to_user(db,user.id,email=user.email)
+    # Only send email if user actually exists
+    response_data = otp_service.send_recovery_otp(db, user)
+    db.commit()
+    return {"message": "If an account with that email exists, a password recovery email has been sent.", "recovery_token": response_data["recovery_token"]}
 
-# @router.post("/password-recovery/verify")
-# def verify_recovery_token(token: str, db: db_dep):
-#     pass
+@router.post("/password-recovery/verify")
+def verify_recovery_otp(data: auth.VerifyOTPRequest, db: db_dep, auth: HTTPAuthorizationCredentials = Depends(security_scheme)):
+    token = auth.credentials
+    email, reset_token = otp_service.verify_recovery_otp(db, token, data.otp)
+    
+    db.commit()
+    return {
+        "status": "success",
+        "message": "OTP verified successfully. Please use the reset_token to establish a new password.",
+        "reset_token": reset_token
+    }
 
-# @router.post("/auth/password-recovery/resend")
-# def resend_recovery_token(email: str, db: db_dep):
-#     pass
+@router.post("/password-recovery/resend")
+def resend_recovery_otp(db: db_dep, auth: HTTPAuthorizationCredentials = Depends(security_scheme)):
+    token = auth.credentials
+    response_data = otp_service.resend_recovery_otp(db, token)
+    db.commit()
+    return {"message": "A new OTP has been sent to your email.", "recovery_token": response_data["recovery_token"]}
 
-# @router.post("/auth/password-recovery/reset")
-# def reset_password(request: auth.ResetPasswordReq, db: db_dep):
-#     # {
-#     # "reset_token": "jwt_or_random_token",
-#     # "new_password": "Strong@123"
-#     # }
-#     pass
+@router.post("/password-recovery/reset")
+def reset_password(request: auth.ResetPasswordReq, db: db_dep):
+    # Verify the reset_session token using the token provided in the request body
+    token = request.token
+    payload = security.verify_jwt_token(token)
+    
+    if not payload or payload.get("type") != "reset_session":
+        raise HTTPException(status_code=403, detail="Invalid token type or expired")
+    
+    user_email = payload.get("email")
+    user = user_repo.get_user_by_email(db, user_email)
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    user.password = security.hash_password(request.new_password)
+    
+    # We should delete the OTP tracker so this session cannot be reused.
+    tracker_uuid = payload.get("sub")
+    tracker = otp_repo.get_tracker_by_uuid(db, uuid=tracker_uuid)
+    if tracker:
+        otp_repo.delete_otp_tracker_by_tracker_id(db, tracker.id)
+        
+    db.commit()
+    return {"message": "Password has been successfully updated."}
 

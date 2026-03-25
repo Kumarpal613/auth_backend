@@ -2,7 +2,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from datetime import datetime, timezone
 from app.db.base import Base
-import uuid
+import uuid as uuid_pkg
 from sqlalchemy.dialects.postgresql import UUID
 
 class Otps(Base):
@@ -23,9 +23,9 @@ class OtpTracker(Base):
     __tablename__ = "otp_tracker"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    uuid: Mapped[uuid.UUID] = mapped_column(
+    uuid: Mapped[uuid_pkg.UUID] = mapped_column(
         UUID(as_uuid=True), 
-        default=uuid.uuid4, 
+        default=uuid_pkg.uuid4, 
         unique=True, 
         index=True
     )

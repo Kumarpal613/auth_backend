@@ -1,0 +1,70 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.14.0, pytest-9.0.2, pluggy-1.6.0
+rootdir: D:\code\soc_sparrow\backend
+plugins: anyio-4.12.1, mock-3.15.1
+collected 12 items
+
+tests\test_auth_routes.py ...F...                                        [ 58%]
+tests\test_otp_service.py ...FF                                          [100%]
+
+================================== FAILURES ===================================
+___________________ test_verify_recovery_otp_missing_token ____________________
+
+    def test_verify_recovery_otp_missing_token():
+        response = client.post(
+            "/auth/password-recovery/verify",
+            json={"otp": "123456"}
+        )
+>       assert response.status_code == 403
+E       assert 401 == 403
+E        +  where 401 = <Response [401 Unauthorized]>.status_code
+
+tests\test_auth_routes.py:68: AssertionError
+_____________________ test_verify_recovery_otp_wrong_otp ______________________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000021D5E81AD50>
+mock_db = <MagicMock id='2325167027744'>
+mock_tracker = <app.models.otps.OtpTracker object at 0x0000021D5EBD1F90>
+
+    def test_verify_recovery_otp_wrong_otp(mocker, mock_db, mock_tracker):
+        mocker.patch("app.services.otp_service.security.verify_jwt_token", return_value={"type": "recovery_session", "sub": "fake-uuid", "email": "test@example.com"})
+        mocker.patch("app.services.otp_service.otp_repo.get_tracker_by_uuid", return_value=mock_tracker)
+    
+        mock_active_otp = Otps(otp="hashed_wrong", is_used=False)
+        mocker.patch("app.services.otp_service.otp_repo.get_active_otp_by_tracker_id", return_value=mock_active_otp)
+        mocker.patch("app.services.otp_service.security.verify_otp", return_value=False)
+    
+        with pytest.raises(HTTPException) as exc:
+            otp_service.verify_recovery_otp(mock_db, "fake_token", "wrong_otp")
+    
+        assert exc.value.status_code == 400
+>       assert "Wrong OTP" in exc.value.detail
+E       AssertionError: assert 'Wrong OTP' in {'message': 'Wrong OTP'}
+E        +  where {'message': 'Wrong OTP'} = HTTPException(status_code=400, detail={'message': 'Wrong OTP'}).detail
+E        +    where HTTPException(status_code=400, detail={'message': 'Wrong OTP'}) = <ExceptionInfo HTTPException(status_code=400, detail={'message': 'Wrong OTP'}) tblen=2>.value
+
+tests\test_otp_service.py:80: AssertionError
+_____________ test_handle_recovery_tracker_lifecycle_new_tracker ______________
+
+mocker = <pytest_mock.plugin.MockerFixture object at 0x0000021D5EBE3D40>
+mock_db = <MagicMock id='2325167025728'>
+mock_user = <app.models.user.User object at 0x0000021D5EBB9CD0>
+
+    def test_handle_recovery_tracker_lifecycle_new_tracker(mocker, mock_db, mock_user):
+        mocker.patch("app.services.otp_service.otp_repo.get_otp_tracker_by_user_id", return_value=None)
+        mock_new_tracker = MagicMock()
+        mocker.patch("app.services.otp_service.otp_repo.create_otp_tracker", return_value=mock_new_tracker)
+    
+        tracker = otp_service.handle_recovery_tracker_lifecycle(mock_db, mock_user)
+    
+        assert tracker == mock_new_tracker
+>       app.services.otp_service.otp_repo.create_otp_tracker.assert_called_once()
+        ^^^
+E       NameError: name 'app' is not defined
+
+tests\test_otp_service.py:90: NameError
+=========================== short test summary info ===========================
+FAILED tests/test_auth_routes.py::test_verify_recovery_otp_missing_token - as...
+FAILED tests/test_otp_service.py::test_verify_recovery_otp_wrong_otp - Assert...
+FAILED tests/test_otp_service.py::test_handle_recovery_tracker_lifecycle_new_tracker
+========================= 3 failed, 9 passed in 6.97s =========================

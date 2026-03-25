@@ -29,6 +29,9 @@ def get_active_otp_by_tracker_id(db,tracker_id):
 def get_otp_tracker_by_temp_user_id(db, temp_user_id: int):
     return db.query(OtpTracker).filter(OtpTracker.user_id == temp_user_id, OtpTracker.is_temp == True).first()
 
+def get_otp_tracker_by_user_id(db, user_id: int):
+    return db.query(OtpTracker).filter(OtpTracker.user_id == user_id, OtpTracker.is_temp == False).first()
+
 def get_tracker_by_uuid(db, uuid ) -> OtpTracker:
     return db.query(OtpTracker).filter(OtpTracker.uuid == uuid).first()
 
@@ -44,7 +47,7 @@ def create_otp_tracker(db, user_id: int, is_temp: bool = False, expires_hours: i
     now = datetime.now(timezone.utc)
     new_tracker = OtpTracker(
         user_id=user_id,
-        is_temp=True,
+        is_temp=is_temp,
         expires_at= now + timedelta(hours=expires_hours),
     )
     db.add(new_tracker)

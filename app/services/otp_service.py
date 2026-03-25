@@ -183,6 +183,98 @@ def verify_signup_otp(db,token, otp):
 
     return payload["email"] 
 
+def handle_recovery_tracker_lifecycle(db, user) -> OtpTracker:
+    tracker = otp_repo.get_otp_tracker_by_user_id(db, user.id)
+    now = datetime.now(timezone.utc)
+    if tracker and tracker.expires_at < now + timedelta(minutes=settings.OTP_EXPIRE_MINUTES):
+        otp_repo.delete_otp_tracker_by_tracker_id(db, id=tracker.id)
+        tracker = None
+
+    if tracker is None:
+        tracker = otp_repo.create_otp_tracker(db, user_id=user.id, is_temp=False, expires_hours=settings.OTP_TRACKER_EXPIRE_HOURS)
+
+    return tracker
+
+def create_recovery_token(
+    tracker_uuid: str,
+    email: str,
+    valid_till_minutes: int = settings.SIGNUP_TOKEN_EXPIRE_MINUTES,
+    token_type: str = "recovery_session"
+):
+    expire = datetime.now(timezone.utc) + timedelta(minutes=valid_till_minutes)
+    payload = {
+        "sub": str(tracker_uuid),
+        "type": token_type,
+        "email": email,
+        "exp": expire,
+    }
+    jwt_token = security.create_jwt_token(payload=payload)
+    return jwt_token
+
+def send_recovery_otp(db, user):
+    tracker = handle_recovery_tracker_lifecycle(db, user=user)
+
+    validate_blocked_tracker(db, tracker)
+    check_otp_generation_permission(db, tracker)
+    otp = request_otp(db, tracker)
+    email.send_recovery_otp(user.email, otp)
+    jwt_token = create_recovery_token(str(tracker.uuid), user.email)
+
+    return {"message": "Recovery OTP sent successfully", "recovery_token": jwt_token}
+
+def resend_recovery_otp(db, token):
+    payload = security.verify_jwt_token(token)
+    if payload.get("type") != "recovery_session":
+        raise HTTPException(status_code=403, detail="Invalid token type")
+    tracker_uuid = payload.get("sub")
+    tracker = otp_repo.get_tracker_by_uuid(db, uuid=tracker_uuid)
+    if tracker is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Recovery session not found. Please start recovery again."
+        )
+    
+    validate_blocked_tracker(db, tracker)
+    check_otp_generation_permission(db, tracker)
+    otp = request_otp(db, tracker)
+    user = user_repo.get_user_by_email(db, payload["email"])
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"message":"User Not Found"})
+    email.send_recovery_otp(user.email, otp)
+    jwt_token = create_recovery_token(str(tracker.uuid), user.email)
+
+    return {"message": "Recovery OTP sent successfully", "recovery_token": jwt_token}
+
+def verify_recovery_otp(db, token, otp):
+    payload = security.verify_jwt_token(token)
+    
+    if not payload or payload.get("type") != "recovery_session":
+        raise HTTPException(status_code=403, detail="Invalid token type or expired")
+    tracker_uuid = payload.get("sub")
+    tracker = otp_repo.get_tracker_by_uuid(db, uuid=tracker_uuid)
+
+    if tracker is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail={"message": "Recovery session not found. Please resend OTP."}
+        )
+    
+    db_otp = otp_repo.get_active_otp_by_tracker_id(db, tracker.id)
+    if db_otp is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"message":"Otp is not requested"})
+  
+    verified = security.verify_otp(otp, otp_hash=db_otp.otp) 
+    
+    if verified:
+        db_otp.is_used = True
+        
+        # Optionally, generate a reset_token specific for changing password.
+        reset_token = create_recovery_token(str(tracker.uuid), payload["email"], token_type="reset_session")
+        db.flush()
+        return payload["email"], reset_token
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"message":"Wrong OTP"})
+
 if __name__ == "__main__":
 
     from app.db.session import engine
