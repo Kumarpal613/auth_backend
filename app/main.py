@@ -10,6 +10,7 @@ from app.routers import users
 from app.routers.auth import router as auth_router
 from app.core.config import settings
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup logic
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI):
     print("Closing database connections")
     engine.dispose()
 
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -37,7 +39,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  
+    allow_origins=["http://localhost:5173", "https://socsparrow.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -46,8 +48,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(users.router)
 
+
 @app.get("/")
 async def root():
     return {"status": "healthy", "message": "API is running"}
-
-
